@@ -709,7 +709,7 @@ select{background-image:none;}
   <select class="char-sel" id="char-sel"></select>
   <span class="badge" id="header-badge">📷 PHOTO MODE</span>
   <button onclick="exportAllData()" style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:rgba(32,192,96,0.12);border:1px solid rgba(32,192,96,0.35);color:#20c060;cursor:pointer;letter-spacing:1px;" title="全データをJSONファイルに書き出す">💾 エクスポート</button>
-  <label style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:rgba(48,144,224,0.12);border:1px solid rgba(48,144,224,0.35);color:#3090e0;cursor:pointer;letter-spacing:1px;" title="別PCで保存したJSONを読み込む">📂 インポート<input type="file" accept=".json" onchange="importAllData(event)" style="display:none;"></label>
+  <label style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:rgba(48,144,224,0.12);border:1px solid rgba(48,144,224,0.35);color:#3090e0;cursor:pointer;letter-spacing:1px;" title="別PCで保存したJSONを読み込む">📂 インポート<input type="file" accept=".json,application/json,text/plain" onchange="importAllData(event)" style="display:none;"></label>
   <button id="header-memo-summary-btn" onclick="toggleMemoSummaryFromHeader()" style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:rgba(144,96,208,0.12);border:1px solid rgba(144,96,208,0.35);color:#9060d0;cursor:pointer;letter-spacing:1px;" title="メモ・反省点まとめ">📝 メモまとめ</button>
   <button id="header-mindset-btn" onclick="toggleMindsetOverlay()" style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:rgba(255,220,0,0.08);border:1px solid rgba(255,220,0,0.35);color:#ffdd00;cursor:pointer;letter-spacing:1px;" title="特に気をつけること">⚡ 気をつけること</button>
   <button onclick="openShortcutSettings()" style="font-family:'Share Tech Mono',monospace;font-size:0.58rem;padding:3px 10px;background:transparent;border:1px solid var(--border);color:var(--muted2);cursor:pointer;letter-spacing:1px;" title="ショートカットキー設定">⌨️ ショートカット</button>
@@ -1180,13 +1180,27 @@ function exportAllData(){
 
 function importAllData(event){
   const file = event.target.files[0];
-  if(!file) return;
+  if(!file){ showToast('⚠️ ファイルが選択されていません', true); return; }
+
+  // iOS対応：ファイルタイプチェックを緩める（iOSはMIMEタイプが違う場合あり）
+  const isJson = file.name.endsWith('.json') || file.type === 'application/json' || file.type === 'text/plain' || file.type === '';
+  if(!isJson){ showToast('⚠️ .jsonファイルを選択してください', true); event.target.value=''; return; }
+
   const reader = new FileReader();
   reader.onload = function(e){
     try{
-      const snapshot = JSON.parse(e.target.result);
+      const text = e.target.result;
+      if(!text || text.trim()===''){
+        showToast('❌ ファイルが空です', true); event.target.value=''; return;
+      }
+      const snapshot = JSON.parse(text);
+      if(typeof snapshot !== 'object' || snapshot === null){
+        showToast('❌ 不正なファイル形式です', true); event.target.value=''; return;
+      }
       const keys = Object.keys(snapshot).filter(k=>k.startsWith('sf6_'));
-      if(keys.length === 0){ showToast('⚠️ sf6_データが見つかりません', true); return; }
+      if(keys.length === 0){
+        showToast('⚠️ sf6_データが見つかりません', true); event.target.value=''; return;
+      }
       if(!confirm(`${keys.length}件のデータを読み込みます。現在のデータは上書きされます。よろしいですか？`)){
         event.target.value=''; return;
       }
@@ -1194,11 +1208,21 @@ function importAllData(event){
       showToast(`✅ ${keys.length}件を読み込みました。リロードします...`);
       setTimeout(()=>location.reload(), 1200);
     }catch(err){
-      showToast('❌ ファイルの読み込みに失敗しました', true);
+      console.error('Import error:', err);
+      showToast('❌ 読み込み失敗：' + (err.message||'不明なエラー'), true);
     }
     event.target.value='';
   };
-  reader.readAsText(file);
+  reader.onerror = function(){
+    showToast('❌ ファイルの読み取りに失敗しました', true);
+    event.target.value='';
+  };
+  // iOS対応：encodingを明示
+  try{
+    reader.readAsText(file, 'UTF-8');
+  }catch(e){
+    reader.readAsText(file);
+  }
 }
 
 function showToast(msg, isErr=false){
